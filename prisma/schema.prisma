@@ -1,0 +1,164 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Prisma schema with UUID prefixes for ids
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// USERS table
+model users {
+  id           String    @id @default(uuid())
+  name         String?
+  lastName     String?   @map("last_name")
+  email        String    @unique
+  password     String?
+  profileImage String?   @map("profile_image")
+  status       String? // inline, offline
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+  lastActive   DateTime? @map("last_active")
+  isAdmin      Boolean   @default(false) @map("is_admin")
+  googleId     String?   @unique @map("google_id")
+
+  // Relationships
+  groupsOwned     groups[]          @relation("UserGroupsOwned")
+  channelsOwned   channels[]        @relation("UserChannelsOwned")
+  messages        messages[]
+  userPermissions userPermissions[]
+  userChats       usersChats[]
+
+  // Index
+  @@index([email])
+}
+
+// CHATS table (ID with chat- prefix)
+model chats {
+  id        String   @id @default(dbgenerated("concat('chat-', gen_random_uuid())"))
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  messages       messages[]
+  userChats      usersChats[]
+  UserPermission userPermissions[]
+}
+
+// GROUPS table (ID with group- prefix)
+model groups {
+  id         String   @id @default(dbgenerated("concat('group-', gen_random_uuid())"))
+  name       String
+  groupImage String?  @map("group_image")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  ownerId    String   @map("owner_id")
+
+  // Relationships
+  owner    users        @relation("UserGroupsOwned", fields: [ownerId], references: [id])
+  channels channels[]
+  UserChat usersChats[]
+
+  @@index([ownerId])
+}
+
+// CHANNELS table (ID with channel- prefix)
+model channels {
+  id           String   @id @default(dbgenerated("concat('channel-', gen_random_uuid())"))
+  name         String
+  channelImage String?  @map("channel_image")
+  ownerId      String   @map("owner_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  isPublic     Boolean  @default(true) @map("is_public")
+
+  // Relationships
+  owner    users        @relation("UserChannelsOwned", fields: [ownerId], references: [id])
+  Group    groups?      @relation(fields: [groupId], references: [id])
+  groupId  String?
+  UserChat usersChats[]
+
+  @@index([ownerId])
+}
+
+// USERCHATS table
+model usersChats {
+  userId    String   @map("user_id")
+  roomId    String   @map("room_id") // Chat, Group, or Channel ID
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  user    users     @relation(fields: [userId], references: [id])
+  chat    chats?    @relation(fields: [roomId], references: [id], map: "UserChat_room_id_chat_fkey")
+  group   groups?   @relation(fields: [roomId], references: [id], map: "UserChat_room_id_group_fkey")
+  channel channels? @relation(fields: [roomId], references: [id], map: "UserChat_room_id_channel_fkey")
+
+  @@id([userId, roomId])
+  @@map("users_chats")
+}
+
+// MESSAGES table
+model messages {
+  id        String   @id @default(uuid())
+  date      DateTime @default(now())
+  content   String // Text, image, video, audio
+  userId    String   @map("user_id")
+  roomId    String   @map("room_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isEdited  Boolean  @default(false) @map("is_edited")
+
+  // Relationships
+  user        users         @relation(fields: [userId], references: [id])
+  chat        chats         @relation(fields: [roomId], references: [id])
+  attachments attachments[]
+
+  @@index([userId])
+  @@index([roomId])
+}
+
+// ATTACHMENT table
+model attachments {
+  id        String   @id @default(uuid())
+  messageId String   @map("message_id")
+  fileType  String   @map("file_type")
+  fileUrl   String   @map("file_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  message messages @relation(fields: [messageId], references: [id])
+
+  @@index([messageId])
+}
+
+// PERMISSION table
+model permissions {
+  id             String            @id @default(uuid())
+  action         String // e.g., remove_user, grant_admin_permission
+  userPermission userPermissions[]
+}
+
+// USERPERMISSION table
+model userPermissions {
+  userId       String   @map("user_id")
+  roomId       String   @map("room_id")
+  permissionId String   @map("permission_id")
+  grantedIt    DateTime @default(now()) @map("granted_at")
+  grantedBy    String   @map("granted_by")
+
+  // Relationships
+  user       users       @relation(fields: [userId], references: [id])
+  chat       chats       @relation(fields: [roomId], references: [id])
+  permission permissions @relation(fields: [permissionId], references: [id])
+
+  @@id([userId, roomId, permissionId])
+  @@map("user_permissions")
+}

@@ -1,5 +1,5 @@
 import express, {Request, Response} from "express";
-import http from "http";
+import { createServer } from "http";
 import socketServer from "./socket.js";
 import cors from "cors";
 
@@ -13,7 +13,7 @@ app.use(
   })
 );
 
-const server = http.createServer(app);
+const server = createServer(app);
 socketServer.attach(server);
 
 app.get('/', (req: Request, res: Response) => {

@@ -141,11 +141,27 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
         }
         const messages = await prisma.messages.findMany({
           where: { roomId },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                imgURL: true,
+              },
+            },
+            attachments: true,
+          },
           orderBy: { createdAt: 'desc' },
           take: 50,
         });
 
-        const filteredMessages = messages.map(({ deletedAt, ...rest }) => rest).reverse();
+        const filteredMessages = messages
+        .map(({ deletedAt, attachments, user, ...rest }) => ({
+          ...rest,
+          imgURL: user && user.imgURL,
+          userName: user && user.name, 
+          attachments: attachments.map(({ deletedAt, ...attachmentRest }) => attachmentRest),
+        })).reverse();
         roomData = roomData as roomData;
         const filteredRoomData = roomData ? {type: roomType, id: roomData.id, name: roomData.name, lastName: roomData.lastName, imgURL: roomData.imgURL, isActive: roomData.status, lastActive: roomData.lastActive, numberOfMembers: count } : null;
 
@@ -157,12 +173,12 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
     });
 
     // Event for sending a new message
-    socket.on('send_message', async ({ roomId, content }) => {
+    socket.on('sendMessage', async ({ roomId, text, attachments }) => {
       const message = await prisma.messages.create({
         data: {
           roomId,
           userId: socket.userId!,
-          content,
+          text,
         },
       });
 

@@ -49,3 +49,9 @@ export interface UserRoomsList {
       };
     };
 }  
+
+export interface Attachment {
+  fileName: string; // The name of the file, including the extension
+  fileBuffer: Buffer; // The file data, typically in a Buffer format
+  mimeType: string; // The MIME type of the file, e.g., 'image/png', 'application/pdf'
+};

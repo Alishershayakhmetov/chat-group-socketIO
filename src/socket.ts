@@ -1,10 +1,11 @@
 import { Server} from "socket.io";
 import { prisma } from "./prismaClient.js"
-import { AuthenticatedSocket, UserRoomsList, roomData } from "./interfaces/interfaces.js";
+import { Attachment, AuthenticatedSocket, UserRoomsList, roomData } from "./interfaces/interfaces.js";
 import { socketAuthMiddleware } from "./middleware/auth.js";
 import { s3 } from "./S3Client.js";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { createNewChat, getUserRoomsList } from "./helper/socketFunctions.js";
+import { performance } from 'perf_hooks';
 
 const io = new Server({
   cors: {
@@ -93,7 +94,22 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
         let roomType = roomId.split("-")[0];
         let roomData;
         let count;
-        if(roomType === 'group') {
+        let chatRoomId;
+        if(roomType === 'chat') {
+          roomData = await prisma.chats.findUniqueOrThrow({
+            where: {id: roomId}
+          })
+          roomData = await prisma.usersRooms.findFirst({
+            where: {
+              chatRoomId: roomId,
+              NOT: { userId: socket.userId! }, // Exclude the current user
+            },
+          })
+          roomData = roomData ? await prisma.users.findUnique({
+            where: {id: roomData.userId}
+          }) : null;
+          roomType = "chat";
+        } else if(roomType === 'group') {
           roomData = await prisma.groups.findUniqueOrThrow({
             where: {id: roomId}
           })
@@ -110,15 +126,30 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
           })
           roomType = "channel";
         } else {
+          chatRoomId = (
+            await prisma.usersRooms.groupBy({
+              by: ['chatRoomId'], // Group by chatRoomId
+              where: {
+                userId: { in: [socket.userId!, roomId] }, // Match both user IDs
+              },
+              _count: {
+                userId: true, // Count userId occurrences
+              },
+              having: {
+                userId: { _count: { equals: 2 } }, // Ensure exactly two matches
+              },
+            })
+          )?.[0]?.chatRoomId;
+
           roomData = await prisma.users.findUniqueOrThrow({
             where: {id: roomId}
           })
-          roomType = "chat";
+          roomType = "user";
         }
         const messages = await prisma.messages.findMany({
           where: {
             OR: [
-              { chatRoomId: roomId }, // Replace with actual chatId variable
+              { chatRoomId: chatRoomId? chatRoomId : roomId }, // Replace with actual chatId variable
               { groupRoomId: roomId }, // Replace with actual groupId variable
               { channelRoomId: roomId }, // Replace with actual channelId variable
             ],
@@ -145,9 +176,9 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
           attachments: attachments.map(({ deletedAt, ...attachmentRest }) => attachmentRest),
         })).reverse();
         roomData = roomData as roomData;
-        const filteredRoomData = roomData ? {roomType, id: roomData.id, roomName: roomType === "chat" ? `${roomData.name} ${roomData.lastName}` : roomData.name, imgURL: roomData.imgURL, isActive: roomData.status, lastActiveTime: roomData.lastActive, numberOfMembers: count } : null;
+        const filteredRoomData = roomData ? {roomType, id: roomType === "user" && chatRoomId ? chatRoomId : roomId, roomName: roomType === "chat" || "user" ? `${roomData.name} ${roomData.lastName}` : roomData.name, imgURL: roomData.imgURL, isActive: roomData.status, lastActiveTime: roomData.lastActive, numberOfMembers: count } : null;
 
-        socket.join(`${roomId}`);
+        socket.join(`${filteredRoomData?.id}`);
         socket.emit('enterChat', {roomData: filteredRoomData, messages: filteredMessages});
       } catch (error) {
         console.error('Error in enterChat:', error);
@@ -157,21 +188,37 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
     
     // Event for sending a new message
     socket.on('sendMessage', async (data) => {
+
+      const startTime = performance.now();
+
+
       const { text, attachments } = data;
       let { roomId } = data;
-      console.log("data received: ", roomId, text, attachments); // d02f2ae5-ae23-4ac4-a2bf-9bb5e8926bbc qwerty []
       let roomType = roomId.split("-")[0];
-      
-      if (roomType !== "chat" || roomType !== "group" || roomType !== "channel") {
+      console.log("data received: ", roomId, text, attachments, `roomType: ${roomType}`); // d02f2ae5-ae23-4ac4-a2bf-9bb5e8926bbc qwerty []
+
+      if (roomType !== "chat") {
+        socket.leave(roomId);
         roomId = await createNewChat(socket.userId!, roomId);
         roomType = 'chat';
+        socket.join(roomId);
       }
       let uploadedAttachments: string[] = [];
 
       if (attachments && attachments.length > 0) {
         try {
           // Upload each attachment to S3
-          const uploadPromises = attachments.map(async (attachment: any) => {
+          const uploadPromises = attachments.map(async (attachment: Attachment) => {
+
+            console.log(attachment.fileBuffer);
+            console.log(attachment.fileBuffer instanceof Buffer);
+
+            if (!attachment.fileBuffer || !(attachment.fileBuffer instanceof Buffer)) {
+              console.error('Invalid file buffer:', attachment);
+              throw new Error('Invalid file buffer');
+            }
+
+
             const { fileName, fileBuffer, mimeType } = attachment;
             const s3Params = {
               Bucket: process.env.BUCKET_NAME, // Replace with your bucket name
@@ -182,8 +229,9 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
             const command = new PutObjectCommand(s3Params);
             await s3.send(command)
           });
-    
+          console.log("checl");
           const uploadResults = await Promise.all(uploadPromises);
+          console.log(uploadResults);
           uploadedAttachments = uploadResults.map((result) => result.Location); // Get URLs
 
           
@@ -205,7 +253,7 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
       
       let message;
       try {
-        console.log({data: {
+        console.log("qwerty ", {data: {
           chatRoomId: roomType === 'chat' ? roomId : null,
           groupRoomId: roomType === 'group' ? roomId : null,
           channelRoomId: roomType === 'channel' ? roomId : null,
@@ -226,9 +274,24 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
         console.log(err);
         socket.emit('uploadError', { message: 'Attachment upload failed!' });
       }
+
+
+      const middleTime = performance.now();
       
+
+      const userName = (await prisma.users.findUnique({
+        where: {id: socket.userId!},
+        select: {
+          name: true
+        }
+      }))?.name;
+      const formattedData = {...message, userName, attachments: uploadedAttachments};
+
+      const endTime = performance.now();
+      console.log(`Function executed in ${endTime - startTime} ms ${middleTime - startTime} ms`);
+
       // Notify all users in the chat about the new message
-      io.in(`${roomId}`).emit('newMessage', {message, uploadedAttachments});
+      io.in(`${roomId}`).emit('newMessage', formattedData);
     });
 
     // Join the socket to chat-specific rooms

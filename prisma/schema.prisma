@@ -33,9 +33,9 @@ model users {
   // Relationships
   groupsOwned     groups[]          @relation("UserGroupsOwned")
   channelsOwned   channels[]        @relation("UserChannelsOwned")
-  messages        messages[]
   userPermissions userPermissions[]
-  userChats       usersChats[]
+  userChats       usersRooms[]      @relation("userRelation")
+  messages        messages[]
 
   // Index
   @@index([email])
@@ -49,9 +49,8 @@ model chats {
   deletedAt DateTime? @map("deleted_at")
 
   // Relationships
-  messages       messages[]
-  userChats      usersChats[]
-  UserPermission userPermissions[]
+  messages  messages[]
+  userRooms usersRooms[] @relation("chatRoomRelation")
 }
 
 // GROUPS table (ID with group- prefix)
@@ -65,9 +64,10 @@ model groups {
   ownerId   String    @map("owner_id")
 
   // Relationships
-  owner    users        @relation("UserGroupsOwned", fields: [ownerId], references: [id])
-  channels channels[]
-  UserChat usersChats[]
+  owner          users        @relation("UserGroupsOwned", fields: [ownerId], references: [id])
+  channels       channels[]
+  messages       messages[]
+  groupRoomChats usersRooms[] @relation("groupRoomRelation")
 
   @@index([ownerId])
 }
@@ -84,49 +84,64 @@ model channels {
   isPublic  Boolean   @default(true) @map("is_public")
 
   // Relationships
-  owner    users        @relation("UserChannelsOwned", fields: [ownerId], references: [id])
-  Group    groups?      @relation(fields: [groupId], references: [id])
-  groupId  String?
-  UserChat usersChats[]
+  owner            users        @relation("UserChannelsOwned", fields: [ownerId], references: [id])
+  Group            groups?      @relation(fields: [groupId], references: [id])
+  groupId          String?
+  messages         messages[]
+  channelRoomChats usersRooms[] @relation("channelRoomRelation")
 
   @@index([ownerId])
 }
 
 // USERCHATS table
-model usersChats {
-  userId    String    @map("user_id")
-  roomId    String    @map("room_id") // Chat, Group, or Channel ID
-  createdAt DateTime  @default(now()) @map("created_at")
-  deletedAt DateTime? @map("deleted_at")
+model usersRooms {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  chatRoomId      String?   @map("chat_room_id")
+  groupRoomId     String?   @map("group_room_id")
+  channelRoomId   String?   @map("channel_room_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  lastMessageTime DateTime  @default(now()) @map("last_message_at")
+  deletedAt       DateTime? @map("deleted_at")
 
   // Relationships
-  user    users     @relation(fields: [userId], references: [id])
-  chat    chats?    @relation(fields: [roomId], references: [id], map: "UserChat_room_id_chat_fkey")
-  group   groups?   @relation(fields: [roomId], references: [id], map: "UserChat_room_id_group_fkey")
-  channel channels? @relation(fields: [roomId], references: [id], map: "UserChat_room_id_channel_fkey")
+  user users @relation("userRelation", fields: [userId], references: [id])
 
-  @@id([userId, roomId])
-  @@map("users_chats")
+  chatRoom    chats?    @relation("chatRoomRelation", fields: [chatRoomId], references: [id], map: "messages_chat_room_id_fkey")
+  groupRoom   groups?   @relation("groupRoomRelation", fields: [groupRoomId], references: [id], map: "messages_group_room_id_fkey")
+  channelRoom channels? @relation("channelRoomRelation", fields: [channelRoomId], references: [id], map: "messages_channel_room_id_fkey")
+
+  @@map("users_Rooms")
 }
 
 // MESSAGES table
 model messages {
-  id        String    @id @default(uuid())
-  text      String // Text
-  userId    String    @map("user_id")
-  roomId    String    @map("room_id")
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
-  isEdited  Boolean   @default(false) @map("is_edited")
+  id            String    @id @default(uuid())
+  text          String? // Text
+  userId        String    @map("user_id")
+  chatRoomId    String?   @map("chat_room_id")
+  groupRoomId   String?   @map("group_room_id")
+  channelRoomId String?   @map("channel_room_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+  isEdited      Boolean   @default(false) @map("is_edited")
+
+  originalMsg       messages?  @relation("MessageRelation", fields: [originalMessageId], references: [id], map: "original_message_id")
+  originalMessageId String?    @map("original_message_id")
+  replies           messages[] @relation("MessageRelation")
 
   // Relationships
   user        users         @relation(fields: [userId], references: [id])
-  chat        chats         @relation(fields: [roomId], references: [id])
+  chat        chats?        @relation(fields: [chatRoomId], references: [id], map: "messages_chat_room_id_fkey")
+  group       groups?       @relation(fields: [groupRoomId], references: [id], map: "messages_group_room_id_fkey")
+  channel     channels?     @relation(fields: [channelRoomId], references: [id], map: "messages_channel_room_id_fkey")
   attachments attachments[]
 
   @@index([userId])
-  @@index([roomId])
+  @@index([chatRoomId])
+  @@index([groupRoomId])
+  @@index([channelRoomId])
 }
 
 // ATTACHMENT table
@@ -163,7 +178,6 @@ model userPermissions {
 
   // Relationships
   user       users       @relation(fields: [userId], references: [id])
-  chat       chats       @relation(fields: [roomId], references: [id])
   permission permissions @relation(fields: [permissionId], references: [id])
 
   @@id([userId, roomId, permissionId])

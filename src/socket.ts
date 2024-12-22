@@ -1,6 +1,6 @@
 import { Server} from "socket.io";
 import { prisma } from "./prismaClient.js"
-import { Attachment, AuthenticatedSocket, UserRoomsList, roomData } from "./interfaces/interfaces.js";
+import { AuthenticatedSocket, UserRoomsList, roomData } from "./interfaces/interfaces.js";
 import { socketAuthMiddleware } from "./middleware/auth.js";
 import { s3 } from "./S3Client.js";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
@@ -14,7 +14,6 @@ const io = new Server({
     credentials: true
   },
 });
-
 
 io.use(socketAuthMiddleware);
 
@@ -188,11 +187,8 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
     
     // Event for sending a new message
     socket.on('sendMessage', async (data) => {
-
       const startTime = performance.now();
-
-
-      const { text, attachments } = data;
+      const { text, tempId , attachments } : {text: string, tempId: string, attachments: {key: string, name: string, url: string, isNamePersist: boolean}[]}= data;
       let { roomId } = data;
       let roomType = roomId.split("-")[0];
       console.log("data received: ", roomId, text, attachments, `roomType: ${roomType}`); // d02f2ae5-ae23-4ac4-a2bf-9bb5e8926bbc qwerty []
@@ -203,53 +199,6 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
         roomType = 'chat';
         socket.join(roomId);
       }
-      let uploadedAttachments: string[] = [];
-
-      if (attachments && attachments.length > 0) {
-        try {
-          // Upload each attachment to S3
-          const uploadPromises = attachments.map(async (attachment: Attachment) => {
-
-            console.log(attachment.fileBuffer);
-            console.log(attachment.fileBuffer instanceof Buffer);
-
-            if (!attachment.fileBuffer || !(attachment.fileBuffer instanceof Buffer)) {
-              console.error('Invalid file buffer:', attachment);
-              throw new Error('Invalid file buffer');
-            }
-
-
-            const { fileName, fileBuffer, mimeType } = attachment;
-            const s3Params = {
-              Bucket: process.env.BUCKET_NAME, // Replace with your bucket name
-              Key: `${Date.now()}-${fileName}`,
-              Body: Buffer.from(fileBuffer), // Convert file buffer to a Buffer object
-              ContentType: mimeType,
-            };
-            const command = new PutObjectCommand(s3Params);
-            await s3.send(command)
-          });
-          console.log("checl");
-          const uploadResults = await Promise.all(uploadPromises);
-          console.log(uploadResults);
-          uploadedAttachments = uploadResults.map((result) => result.Location); // Get URLs
-
-          
-          attachments.map(async (attachment: string) => {
-            await prisma.attachments.create({
-              data: {
-                messageId: socket.userId!,
-                fileUrl: attachment
-              }
-            })
-          })
-        } catch (err) {
-          console.error('Error uploading attachments:', err);
-          socket.emit('uploadError', { message: 'Attachment upload failed!' });
-          return;
-        }
-      }
-
       
       let message;
       try {
@@ -272,9 +221,21 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
         });
       } catch (err) {
         console.log(err);
-        socket.emit('uploadError', { message: 'Attachment upload failed!' });
+        socket.emit('uploadError', { message: 'Message creating failed!' });
+        return;
       }
 
+      for (const attachment of attachments) {
+        await prisma.attachments.create({
+          data: {
+            fileUrl: attachment.url,
+            key: attachment.key,
+            name: attachment.name,
+            isNamePersist: attachment.isNamePersist,
+            messageId: message.id
+          }
+        })
+      }
 
       const middleTime = performance.now();
       
@@ -285,7 +246,7 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
           name: true
         }
       }))?.name;
-      const formattedData = {...message, userName, attachments: uploadedAttachments};
+      const formattedData = {...message, userName, attachments: attachments, tempId};
 
       const endTime = performance.now();
       console.log(`Function executed in ${endTime - startTime} ms ${middleTime - startTime} ms`);

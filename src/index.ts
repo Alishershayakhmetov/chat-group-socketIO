@@ -2,6 +2,14 @@ import express, {Request, Response} from "express";
 import { createServer } from "http";
 import socketServer from "./socket.js";
 import cors from "cors";
+import { s3 } from "./S3Client.js";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import crypto from 'crypto';
+import { promisify } from "util";
+import { prisma } from "./prismaClient.js";
+
+const randomBytes = promisify(crypto.randomBytes);
 
 const app = express();
 app.use(express.json());
@@ -19,6 +27,37 @@ socketServer.attach(server);
 app.get('/', (req: Request, res: Response) => {
   res.send('Chat app running...');
 });
+
+async function generateUploadURLs(extensions: string[]): Promise<{url: string, key: string}[]> {
+  const signedUrls: {url: string, key: string}[] = [];
+
+  for (const extension of extensions) {
+    const rawBytes = await randomBytes(16);
+    const fileName = rawBytes.toString('hex') + extension;
+
+    const params = {
+      Bucket: process.env.BUCKET_NAME1,
+      Key: fileName,
+      Expires: 60,
+    };
+
+    const command = new PutObjectCommand({
+      Bucket: params.Bucket,
+      Key: params.Key,
+    });
+
+    const uploadURL = await getSignedUrl(s3, command, { expiresIn: params.Expires });
+    signedUrls.push({url: uploadURL, key: fileName});
+  }
+
+  return signedUrls;
+}
+
+app.post('/upload', async (req: Request, res: Response) => {
+  const urls = await generateUploadURLs(req.body.extensions);
+
+  res.send({urls});
+})
 
 server.listen(process.env.APP_PORT, () => {
   console.log(`Server listening on port ${process.env.APP_PORT}`);

@@ -146,11 +146,14 @@ model messages {
 
 // ATTACHMENT table
 model attachments {
-  id        String    @id @default(uuid())
-  messageId String    @map("message_id")
-  fileUrl   String    @map("file_url")
-  createdAt DateTime  @default(now()) @map("created_at")
-  deletedAt DateTime? @map("deleted_at")
+  id            String    @id @default(uuid())
+  messageId     String    @map("message_id")
+  fileUrl       String    @map("file_url")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  deletedAt     DateTime? @map("deleted_at")
+  key           String
+  name          String
+  isNamePersist Boolean
 
   // Relationships
   message messages @relation(fields: [messageId], references: [id])

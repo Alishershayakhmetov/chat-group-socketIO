@@ -33,7 +33,7 @@ async function generateUploadURLs(extensions: string[]): Promise<{url: string, k
 
   for (const extension of extensions) {
     const rawBytes = await randomBytes(16);
-    const fileName = rawBytes.toString('hex') + extension;
+    const fileName = rawBytes.toString('hex') + "." + extension;
 
     const params = {
       Bucket: process.env.BUCKET_NAME1,

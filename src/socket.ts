@@ -3,7 +3,8 @@ import { prisma } from "./prismaClient.js"
 import { AuthenticatedSocket, UserRoomsList, roomData } from "./interfaces/interfaces.js";
 import { socketAuthMiddleware } from "./middleware/auth.js";
 import { s3 } from "./S3Client.js";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createNewChat, getUserRoomsList } from "./helper/socketFunctions.js";
 import { performance } from 'perf_hooks';
 
@@ -148,9 +149,9 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
         const messages = await prisma.messages.findMany({
           where: {
             OR: [
-              { chatRoomId: chatRoomId? chatRoomId : roomId }, // Replace with actual chatId variable
-              { groupRoomId: roomId }, // Replace with actual groupId variable
-              { channelRoomId: roomId }, // Replace with actual channelId variable
+              { chatRoomId: chatRoomId? chatRoomId : roomId },
+              { groupRoomId: roomId },
+              { channelRoomId: roomId },
             ],
           },
           include: {
@@ -166,14 +167,40 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
           orderBy: { createdAt: 'desc' },
           take: 50,
         });
-        
-        const filteredMessages = messages
-        .map(({ deletedAt, attachments, user, ...rest }) => ({
-          ...rest,
-          imgURL: user && user.imgURL,
-          userName: user && user.name, 
-          attachments: attachments.map(({ deletedAt, ...attachmentRest }) => attachmentRest),
-        })).reverse();
+
+        // Generate pre-signed URLs for attachments
+        const filteredMessages = await Promise.all(
+          messages.map(async ({ deletedAt, attachments, user, ...rest }) => {
+            const signedAttachments = await Promise.all(
+              attachments.map(async ({ key, name, isNamePersist }) => {
+                console.log(`key of object: ${key}`)
+
+                let command = new GetObjectCommand({
+                  Bucket: process.env.BUCKET_NAME1,
+                  Key: key,
+                });
+                if (isNamePersist) {
+                  command = new GetObjectCommand({
+                    Bucket: process.env.BUCKET_NAME1,
+                    Key: key,
+                    ResponseContentDisposition: `attachment; filename=${name}`,
+                  });
+                }
+                
+                const url = await getSignedUrl(s3, command, { expiresIn: 3600 }); // 1 hour expiration
+                return { fileURL: url, fileName: name, saveAsMedia: isNamePersist };
+              })
+            );
+
+            return {
+              ...rest,
+              imgURL: user?.imgURL,
+              userName: user?.name,
+              attachments: signedAttachments,
+            };
+          }).reverse()
+        );
+
         roomData = roomData as roomData;
         const filteredRoomData = roomData ? {roomType, id: roomType === "user" && chatRoomId ? chatRoomId : roomId, roomName: roomType === "chat" || "user" ? `${roomData.name} ${roomData.lastName}` : roomData.name, imgURL: roomData.imgURL, isActive: roomData.status, lastActiveTime: roomData.lastActive, numberOfMembers: count } : null;
 
@@ -185,13 +212,12 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
       }
     });
     
-    // Event for sending a new message
     socket.on('sendMessage', async (data) => {
       const startTime = performance.now();
-      const { text, tempId , attachments } : {text: string, tempId: string, attachments: {key: string, name: string, url: string, isNamePersist: boolean}[]}= data;
+      const { text, tempId , attachments } : {text: string, tempId: string, attachments: {key: string, name: string, url: string, saveAsMedia: boolean}[]}= data;
       let { roomId } = data;
       let roomType = roomId.split("-")[0];
-      console.log("data received: ", roomId, text, attachments, `roomType: ${roomType}`); // d02f2ae5-ae23-4ac4-a2bf-9bb5e8926bbc qwerty []
+      console.log("data received: ", roomId, text, attachments, `roomType: ${roomType}`);
 
       if (roomType !== "chat") {
         socket.leave(roomId);
@@ -231,14 +257,13 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
             fileUrl: attachment.url,
             key: attachment.key,
             name: attachment.name,
-            isNamePersist: attachment.isNamePersist,
+            isNamePersist: attachment.saveAsMedia,
             messageId: message.id
           }
         })
       }
 
       const middleTime = performance.now();
-      
 
       const userName = (await prisma.users.findUnique({
         where: {id: socket.userId!},
@@ -246,7 +271,46 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
           name: true
         }
       }))?.name;
-      const formattedData = {...message, userName, attachments: attachments, tempId};
+
+      // Generate presigned URLs for attachments using GetObjectCommand
+      const presignedAttachments = await Promise.all(
+        attachments.map(async (attachment) => {
+          try {
+
+            let command = new GetObjectCommand({
+              Bucket: process.env.BUCKET_NAME1,
+              Key: attachment.key,
+            });
+            if (attachment.saveAsMedia) {
+              command = new GetObjectCommand({
+                Bucket: process.env.BUCKET_NAME1,
+                Key: attachment.key,
+                ResponseContentDisposition: `attachment; filename=${attachment.name}`,
+              });
+            }
+
+            const presignedUrl = await getSignedUrl(
+              s3,
+              command,
+              { expiresIn: 3600 } // 1 hour
+            );
+            return {
+              saveAsMedia: attachment.saveAsMedia,
+              fileURL: presignedUrl,
+              fileName: attachment.name
+            };
+          } catch (error) {
+            console.error(`Error generating presigned URL for key: ${attachment.key}`, error);
+            return {
+              saveAsMedia: attachment.saveAsMedia,
+              fileURL: null,
+              fileName: attachment.name
+            }; // Handle error gracefully
+          }
+        })
+      );
+
+      const formattedData = {...message, userName, attachments: presignedAttachments, tempId};
 
       const endTime = performance.now();
       console.log(`Function executed in ${endTime - startTime} ms ${middleTime - startTime} ms`);

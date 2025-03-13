@@ -172,7 +172,7 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
         const filteredMessages = await Promise.all(
           messages.map(async ({ deletedAt, attachments, user, ...rest }) => {
             const signedAttachments = await Promise.all(
-              attachments.map(async ({ key, name, isNamePersist }) => {
+              attachments.map(async ({ key, name, isNamePersist, fileSize }) => {
                 console.log(`key of object: ${key}`)
 
                 let command = new GetObjectCommand({
@@ -188,7 +188,7 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
                 }
                 
                 const url = await getSignedUrl(s3, command, { expiresIn: 3600 }); // 1 hour expiration
-                return { fileURL: url, fileName: name, saveAsMedia: isNamePersist };
+                return { fileURL: url, fileName: name, saveAsMedia: isNamePersist, fileSize };
               })
             );
 
@@ -219,7 +219,8 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
       let roomType = roomId.split("-")[0];
       console.log("data received: ", roomId, text, attachments, `roomType: ${roomType}`);
 
-      if (roomType !== "chat") {
+      if (!["chat", "group", "channel"].includes(roomType)) {
+        console.log("fly to the moon")
         socket.leave(roomId);
         roomId = await createNewChat(socket.userId!, roomId);
         roomType = 'chat';
@@ -318,6 +319,112 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
       // Notify all users in the chat about the new message
       io.in(`${roomId}`).emit('newMessage', formattedData);
     });
+
+    socket.on('openCreateNewGroup', async () => { // N + 1 problem
+      try {
+        // Fetch the second person who has chatted with the current user
+        const userChats = await prisma.usersRooms.findMany({
+          where: {
+            userId: socket.userId,
+            chatRoomId: { not: null }, // Ensure the user is part of a chat room
+          },
+          include: {
+            chatRoom: {
+              include: {
+                userRooms: true,  // Explicitly include the userRooms relation
+              },
+            },
+          },
+        });
+    
+        // Check for chat rooms and get the second user in each
+        const otherUsers = userChats.map((chat) => {
+          // Find the second person who isn't the current user
+          const secondPerson = chat.chatRoom!.userRooms.find(
+            (room) => room.userId !== socket.userId
+          );
+          return secondPerson ? secondPerson.userId : null;
+        }).filter((id): id is string => id !== null); // Filter out null values    
+
+        if (otherUsers.length > 0 ) {
+          // Fetch user details for the other users
+          const usersInfo = await prisma.users.findMany({
+            where: {
+              id: { in: otherUsers },
+            },
+            select: {
+              id: true,
+              name: true,
+              lastName: true,
+              imgURL: true,
+              status: true,
+            },
+          });
+
+          // Notify the client about the successful group creation
+          socket.emit("openCreateNewGroup", {success: true, users: usersInfo});
+        } else {
+          socket.emit("groupCreationError", "No other users found.");
+        }
+      } catch (error) {
+        console.error("Error creating group:", error);
+        socket.emit("openCreateNewGroup", {success: false, message: "An error occurred while finding users"});
+      }
+    });
+
+    socket.on('createNewGroup', async (data) => {
+      try {
+        const { title, uploadedImage, users } : {title: string, uploadedImage: {key: string, name: string, url: string, saveAsMedia: boolean}, users: string[]} = data;
+        const newGroup = await prisma.groups.create({
+          data: {
+            name: title,
+            ownerId: socket.userId!,
+            imgURL: uploadedImage ? uploadedImage.url : null
+          }
+        })
+
+        // Ensure the owner is included in the users list
+        const allUsers = Array.from(new Set([...users, socket.userId!]));
+        // Add users to the group
+        await prisma.usersRooms.createMany({
+          data: allUsers.map((userId) => ({
+            userId,
+            groupRoomId: newGroup.id,
+          })),
+        });
+
+        socket.emit("groupCreated", { roomId: newGroup.id, chatImgURL: newGroup.imgURL, chatName: newGroup.name });
+      } catch (error) {
+        console.error("Error creating group:", error);
+        socket.emit("groupCreated", { success: false, error: error });
+      }
+    })
+
+    socket.on('createNewChannel', async (data) => {
+      try {
+        const { title, uploadedImage } : {title: string, uploadedImage: {key: string, name: string, url: string, saveAsMedia: boolean}} = data;
+
+        const newChannel = await prisma.channels.create({
+          data: {
+            name: title,
+            ownerId: socket.userId!,
+            imgURL: uploadedImage ? uploadedImage.url : null
+          }
+        })
+
+        await prisma.usersRooms.create({
+          data: {
+            userId: socket.userId!,
+            channelRoomId: newChannel.id,
+          }
+        });
+
+        socket.emit("createNewChannel", { roomId: newChannel.id, chatImgURL: newChannel.imgURL, chatName: newChannel.name });
+      } catch (error) {
+        console.error("Error creating group:", error);
+        socket.emit("createNewChannel", { success: false, error: error });
+      }
+    })
 
     // Join the socket to chat-specific rooms
     socket.on('join_chat', (roomId) => {

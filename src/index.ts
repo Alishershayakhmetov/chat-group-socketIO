@@ -54,10 +54,20 @@ async function generateUploadURLs(extensions: string[]): Promise<{url: string, k
 }
 
 app.post('/upload', async (req: Request, res: Response) => {
-  const urls = await generateUploadURLs(req.body.extensions);
+  let { extensions } = req.body;
 
-  res.send({urls});
-})
+  // Ensure extensions is always an array of strings
+  if (typeof extensions === 'string') {
+    extensions = [extensions];
+  } else if (!Array.isArray(extensions) || !extensions.every(ext => typeof ext === 'string')) {
+    res.status(400).json({ error: 'Invalid extensions format' });
+    return;
+  }
+
+  const urls = await generateUploadURLs(extensions);
+  res.json({ urls });
+});
+
 
 server.listen(process.env.APP_PORT, () => {
   console.log(`Server listening on port ${process.env.APP_PORT}`);

@@ -154,6 +154,7 @@ model attachments {
   key           String
   name          String
   isNamePersist Boolean
+  fileSize      BigInt?   @map("file_size")
 
   // Relationships
   message messages @relation(fields: [messageId], references: [id])

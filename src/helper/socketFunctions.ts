@@ -76,6 +76,7 @@ export async function getUserRoomsList(userId: string) {
           id: true,
           name: true,
           imgURL: true,
+          createdAt: true,
           messages: {
             orderBy: { createdAt: 'desc' },
             take: 1, // Last message only
@@ -99,6 +100,7 @@ export async function getUserRoomsList(userId: string) {
           id: true,
           name: true,
           imgURL: true,
+          createdAt: true,
           messages: {
             orderBy: { createdAt: 'desc' },
             take: 1, // Last message only
@@ -120,33 +122,37 @@ export async function getUserRoomsList(userId: string) {
     }
   });
 
+  console.log("Test result from db", userRooms);
+
   const simplifiedRooms = userRooms.map((room) => {
     let simplified = [];
   
     // Process channelRoom
     if (room.channelRoom) {
       const channelMessage = room.channelRoom.messages?.[0];
-      channelMessage && simplified.push({
+      console.log("channel detected info, ", room)
+      simplified.push({
         chatName: room.channelRoom.name,
         chatImageURL: room.channelRoom.imgURL,
-        messageUserName: channelMessage?.user ? `${channelMessage.user.name} ${channelMessage.user.lastName}` : null,
-        messageText: channelMessage?.text || null,
-        lastMessageTime: channelMessage?.updatedAt || null,
-        isMessageForwarded: channelMessage.originalMessageId ? Boolean(channelMessage.originalMessageId) : false,
+        messageUserName: channelMessage && channelMessage?.user ? `${channelMessage.user.name} ${channelMessage.user.lastName}` : null,
+        messageText: channelMessage && channelMessage?.text || null,
+        lastMessageTime: channelMessage ? channelMessage?.updatedAt || null : room.channelRoom.createdAt,
+        isMessageForwarded: channelMessage && channelMessage.originalMessageId ? Boolean(channelMessage.originalMessageId) : false,
         roomId: room.channelRoom.id,
       });
     }
   
     // Process groupRoom
     if (room.groupRoom) {
+      console.log("group room detected", room)
       const groupMessage = room.groupRoom.messages?.[0];
-      groupMessage && simplified.push({
+      simplified.push({
         chatName: room.groupRoom.name,
         chatImageURL: room.groupRoom.imgURL,
-        messageUserName: groupMessage?.user ? `${groupMessage.user.name} ${groupMessage.user.lastName}` : null,
-        messageText: groupMessage?.text || null,
-        lastMessageTime: groupMessage?.updatedAt || null,
-        isMessageForwarded: groupMessage.originalMessageId ? Boolean(groupMessage.originalMessageId) : false,
+        messageUserName: groupMessage && groupMessage?.user ? `${groupMessage.user.name} ${groupMessage.user.lastName}` : null,
+        messageText: groupMessage && groupMessage?.text || null,
+        lastMessageTime: groupMessage ? groupMessage?.updatedAt || null : room.groupRoom.createdAt,
+        isMessageForwarded: groupMessage && groupMessage.originalMessageId ? Boolean(groupMessage.originalMessageId) : false,
         roomId: room.groupRoom.id,
       });
     }
@@ -165,7 +171,8 @@ export async function getUserRoomsList(userId: string) {
         roomId: room.chatRoom.id,
       });
     }
-  
+    
+    console.log("qwerty ayo",simplified)
     return simplified;
   });
   

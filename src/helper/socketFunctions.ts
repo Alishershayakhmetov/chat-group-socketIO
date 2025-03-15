@@ -1,37 +1,5 @@
 import { prisma } from "../prismaClient.js";
 
-/*
-export async function GetRoomInfo(roomId: string) {
-  let roomType = roomId.split("-")[0];
-  let roomData;
-  let count;
-  if(roomType === 'group') {
-    roomData = await prisma.groups.findUniqueOrThrow({
-    	where: {id: roomId}
-    })
-    count = await prisma.usersChats.count({
-      where: {roomId: roomData.id}
-    })
-    roomType = "group";
-  } else if (roomType === "channel") {
-    roomData = await prisma.channels.findUniqueOrThrow({
-      where: {id: roomId}
-    })
-    count = await prisma.usersChats.count({
-      where: {roomId: roomData.id}
-    })
-    roomType = "channel";
-  } else {
-    roomData = await prisma.users.findUniqueOrThrow({
-      where: {id: roomId}
-    })
-    roomType = "chat";
-  }
-
-	return {...roomData, count, roomType};
-}
-*/
-
 export async function getUserRoomsList(userId: string) {
   const userRooms = await prisma.usersRooms.findMany({
     where: { userId: userId },
@@ -127,7 +95,6 @@ export async function getUserRoomsList(userId: string) {
   const simplifiedRooms = userRooms.map((room) => {
     let simplified = [];
   
-    // Process channelRoom
     if (room.channelRoom) {
       const channelMessage = room.channelRoom.messages?.[0];
       console.log("channel detected info, ", room)
@@ -142,7 +109,6 @@ export async function getUserRoomsList(userId: string) {
       });
     }
   
-    // Process groupRoom
     if (room.groupRoom) {
       console.log("group room detected", room)
       const groupMessage = room.groupRoom.messages?.[0];
@@ -157,7 +123,6 @@ export async function getUserRoomsList(userId: string) {
       });
     }
   
-    // Process chatRoom
     if (room.chatRoom) {
       const chatMessage = room.chatRoom.messages?.[0];
       const chatNameData = room.chatRoom.userRooms?.[0]?.user;
@@ -171,8 +136,6 @@ export async function getUserRoomsList(userId: string) {
         roomId: room.chatRoom.id,
       });
     }
-    
-    console.log("qwerty ayo",simplified)
     return simplified;
   });
   

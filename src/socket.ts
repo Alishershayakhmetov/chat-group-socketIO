@@ -348,6 +348,125 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
         socket.emit("forwardMessages", { success: false, error: error });
       }
     });
+
+    /*
+    // Fetch older messages
+    socket.on("fetchOlderMessages", async ({ roomId, lastMessageId }) => {
+      try {
+        const olderMessages = await prisma.messages.findMany({
+          where: {
+            OR: [
+              { chatRoomId: roomId },
+              { groupRoomId: roomId },
+              { channelRoomId: roomId },
+            ],
+            id: { lt: lastMessageId }, // Fetch messages older than the lastMessageId
+          },
+          orderBy: { createdAt: "desc" }, // Fetch in descending order
+          take: 10, // Limit to 10 messages
+        });
+
+        socket.emit("olderMessages", olderMessages);
+      } catch (error) {
+        console.error("Error fetching older messages:", error);
+        socket.emit("olderMessages", []);
+      }
+    });
+    */
+
+    socket.on("getOnlyUserRooms", async ({ groupId }) => {
+      try {
+        if (!socket.userId) {
+          return socket.emit("error", { msg: "Unauthorized" });
+        }
+
+        // Get userIds already in the group
+        const existingUsers = await prisma.usersRooms.findMany({
+          where: { groupRoomId: groupId },
+          select: { userId: true },
+        });
+
+        const existingUserIds = new Set(existingUsers.map(user => user.userId));
+
+        const userRooms = await prisma.usersRooms.findMany({
+          where: { userId: socket.userId },
+          orderBy: { lastMessageTime: 'desc' },
+          select: {
+            chatRoom: {
+              select: {
+                id: true,
+                userRooms: {
+                  where: { userId: { not: socket.userId, notIn: Array.from(existingUserIds) } }, // Exclude the current user
+                  select: {
+                    user: {
+                      select: {
+                        name: true,
+                        lastName: true,
+                        imgURL: true,
+                        id: true
+                      },
+                    },
+                  },
+                },
+              }
+            },
+          }
+        });
+
+        console.log(userRooms);
+
+        const formattedData = userRooms
+          .map((roomData) => {
+            if (!roomData.chatRoom?.userRooms.length) return null;
+            return {
+              id: roomData.chatRoom.userRooms[0].user.id,
+              chatName: roomData.chatRoom.userRooms[0].user.name,
+              chatImageURL: roomData.chatRoom.userRooms[0].user.imgURL
+            };
+          })
+          .filter(Boolean); // Remove null or undefined values
+
+        socket.emit("getOnlyUserRooms", formattedData);
+
+      } catch (error) {
+        console.error("Error getting rooms:", error);
+        socket.emit("deleteMessage", { success: false, error: error });
+      }
+    })
+
+    socket.on("addUserInGroup", async ({ userIds, groupId }) => {
+      try {
+        // Find users who are already in the group
+        const existingUsers = await prisma.usersRooms.findMany({
+          where: {
+            groupRoomId: groupId,
+            userId: { in: userIds },
+          },
+          select: { userId: true },
+        });
+    
+        // Filter out already added users
+        const existingUserIds = new Set(existingUsers.map(user => user.userId));
+        const newUserIds = userIds.filter((userId: string) => !existingUserIds.has(userId));
+    
+        if (newUserIds.length === 0) {
+          return socket.emit("addUserInGroup", { success: false, message: "All users are already in the group" });
+        }
+    
+        // Add only new users
+        const addedUsersRooms = await prisma.usersRooms.createMany({
+          data: newUserIds.map((userId: string) => ({
+            userId,
+            groupRoomId: groupId,
+          })),
+        });
+    
+        socket.emit("addUserInGroup", { success: true, addedUsersRooms });
+      } catch (error) {
+        console.error("Error adding users to group:", error);
+        socket.emit("addUserInGroup", { success: false, message: "An error occurred" });
+      }
+    });
     
 
   } catch (error) {

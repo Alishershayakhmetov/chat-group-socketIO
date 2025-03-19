@@ -4,6 +4,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3 } from "../S3Client.js";
 
 interface attachment { 
+    id: string,
     key: string, 
     name: string, 
     isNamePersist: boolean, 
@@ -11,7 +12,11 @@ interface attachment {
 }
 
 export async function getRoomData(userId: string, roomId: string) {
-    let roomType = roomId.split("-")[0];
+    let roomType;
+    if (roomId === "savedMessages") {
+        roomType = "savedMessages"
+    }
+    roomType = roomId.split("-")[0];
     let roomData, count, chatRoomId;
 
     if (roomType === 'chat') {
@@ -29,6 +34,9 @@ export async function getRoomData(userId: string, roomId: string) {
         roomData = await prisma.channels.findUniqueOrThrow({ where: { id: roomId } });
         count = await prisma.usersRooms.count({ where: { channelRoomId: roomData.id } });
     } 
+    else if (roomType == "savedMessages") {
+        
+    }
     else {
         chatRoomId = (
             await prisma.usersRooms.groupBy({
@@ -59,6 +67,17 @@ export async function getChatMessages(roomId: string) {
                 select: { id: true, name: true, imgURL: true },
             },
             attachments: true,
+			originalMsg: {
+				select: {
+					text: true,
+					user: {
+						select: {
+							name: true,
+							lastName: true
+						},
+					},
+				},
+			}
         },
         orderBy: { createdAt: 'desc' },
         take: 50,
@@ -69,8 +88,7 @@ export async function processMessages(messages: any[]) {
     return Promise.all(
         messages.map(async ({ deletedAt, attachments, user, ...rest }) => {
             const signedAttachments = await Promise.all(
-                attachments.map(async ({ key, name, isNamePersist, fileSize } : attachment) => {
-                    console.log(`key of object: ${key}`);
+                attachments.map(async ({ key, name, isNamePersist, fileSize, id } : attachment) => {
 
                     let command = new GetObjectCommand({
                         Bucket: process.env.BUCKET_NAME1,
@@ -79,7 +97,7 @@ export async function processMessages(messages: any[]) {
                     });
 
                     const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
-                    return { fileURL: url, fileName: name, saveAsMedia: isNamePersist, fileSize: fileSize ? fileSize.toString() : null  };
+                    return { id, fileURL: url, fileName: name, saveAsMedia: isNamePersist, fileSize: fileSize ? fileSize.toString() : null  };
                 })
             );
 

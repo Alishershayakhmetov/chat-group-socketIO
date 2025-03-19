@@ -1,6 +1,6 @@
 import { prisma } from "../prismaClient.js";
 
-export async function getUserRoomsList(userId: string) {
+export async function getUserRoomsListWithLastMessage(userId: string) {
   const userRooms = await prisma.usersRooms.findMany({
     where: { userId: userId },
     orderBy: { lastMessageTime: 'desc' },
@@ -10,8 +10,9 @@ export async function getUserRoomsList(userId: string) {
         select: {
           id: true,
           messages: {
+            where: { deletedAt: null }, // Exclude soft-deleted messages
             orderBy: { createdAt: 'desc' },
-            take: 1, // Last message only
+            take: 1, // Last non-deleted message only
             select: {
               text: true,
               updatedAt: true,
@@ -46,8 +47,9 @@ export async function getUserRoomsList(userId: string) {
           imgURL: true,
           createdAt: true,
           messages: {
+            where: { deletedAt: null }, // Exclude soft-deleted messages
             orderBy: { createdAt: 'desc' },
-            take: 1, // Last message only
+            take: 1, // Last non-deleted message only
             select: {
               text: true,
               updatedAt: true,
@@ -70,8 +72,9 @@ export async function getUserRoomsList(userId: string) {
           imgURL: true,
           createdAt: true,
           messages: {
+            where: { deletedAt: null }, // Exclude soft-deleted messages
             orderBy: { createdAt: 'desc' },
-            take: 1, // Last message only
+            take: 1, // Last non-deleted message only
             select: {
               text: true,
               updatedAt: true,
@@ -90,14 +93,11 @@ export async function getUserRoomsList(userId: string) {
     }
   });
 
-  console.log("Test result from db", userRooms);
-
   const simplifiedRooms = userRooms.map((room) => {
     let simplified = [];
   
     if (room.channelRoom) {
       const channelMessage = room.channelRoom.messages?.[0];
-      console.log("channel detected info, ", room)
       simplified.push({
         chatName: room.channelRoom.name,
         chatImageURL: room.channelRoom.imgURL,
@@ -110,7 +110,6 @@ export async function getUserRoomsList(userId: string) {
     }
   
     if (room.groupRoom) {
-      console.log("group room detected", room)
       const groupMessage = room.groupRoom.messages?.[0];
       simplified.push({
         chatName: room.groupRoom.name,

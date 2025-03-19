@@ -7,7 +7,6 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from 'crypto';
 import { promisify } from "util";
-import { prisma } from "./prismaClient.js";
 
 const randomBytes = promisify(crypto.randomBytes);
 

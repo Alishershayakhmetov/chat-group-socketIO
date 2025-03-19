@@ -6,7 +6,7 @@ import { s3 } from "../S3Client.js";
   /**
    * Saves a message in the database.
    */
-export async function saveMessage(userId: string, roomId: string, roomType: string, text: string) {
+export async function saveMessage(userId: string, roomId: string, roomType: string, text: string, originalMessageId: string | null | undefined) {
     try {
       return await prisma.messages.create({
         data: {
@@ -15,6 +15,7 @@ export async function saveMessage(userId: string, roomId: string, roomType: stri
           channelRoomId: roomType === 'channel' ? roomId : null,
           userId,
           text,
+          originalMessageId: originalMessageId 
         },
       });
     } catch (err) {

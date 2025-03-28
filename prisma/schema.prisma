@@ -22,7 +22,7 @@ model users {
   email      String    @unique
   password   String?
   imgURL     String?   @map("img_url")
-  status     String? // inline, offline
+  status     String? // online, offline
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
   deletedAt  DateTime? @map("deleted_at")

@@ -9,6 +9,91 @@ import { formatRoomData, getChatMessages, getRoomData, processMessages } from ".
 import { fetchUserName, generatePresignedUrls, saveAttachments, saveMessage } from "./helper/sendMessage.js";
 import { Prisma } from "@prisma/client";
 
+import { Redis } from "ioredis";
+
+const redis = new Redis(process.env.REDIS_URL!);
+
+const publisher = new Redis(process.env.REDIS_URL!); // For publishing events
+const subscriber = new Redis(process.env.REDIS_URL!); // For subscribing to channels
+
+// Subscribe to Redis channels
+subscriber.subscribe('userStatus', (err) => {
+  if (err) console.error('Failed to subscribe to user-status:', err);
+  else console.log('Subscribed to user-status channel');
+});
+
+subscriber.subscribe('newMessage', (err) => {
+  if (err) console.error('Failed to subscribe to new-message:', err);
+  else console.log('Subscribed to new-message channel');
+});
+
+subscriber.on('message', async (channel, message) => {
+  const event = JSON.parse(message);
+
+  if (channel === 'newMessage') {
+    const { roomId, message } = event;
+
+    // Fetch all users who have a record of the chat
+    const usersInRoom = await prisma.usersRooms.findMany({
+      where: {
+        OR: [
+          { chatRoomId: roomId },
+          { groupRoomId: roomId },
+          { channelRoomId: roomId }
+        ],
+      },
+      select: {
+        userId: true,
+      }
+    });
+
+    // Notify all users who are online
+    usersInRoom.forEach(async ({ userId }) => {
+      const socketIds = await redis.smembers(`user:${userId}:sockets`);
+      socketIds.forEach((socketId) => {
+        io.to(socketId).emit('newMessageNotification', message);
+      });
+    });
+
+    // Emit to the room (only for users inside it)
+    io.to(roomId).emit('newMessage', message);
+  } else if (channel === 'userStatus') {
+    const { userId, status, lastSeen } = event;
+
+    const userRooms = await prisma.usersRooms.findMany({
+      where: { userId: userId },
+      select: {
+        chatRoom: {
+          select: {
+            id: true,
+            userRooms: {
+              where: { userId: { not: userId } },
+              select: {
+                user: {
+                  select: {
+                    id: true
+                  },
+                },
+              },
+            },
+          }
+        },
+      }
+    });
+
+    const uniqueUserIds = [...new Set(userRooms.map((u) => u.chatRoom?.userRooms[0].user.id))];
+
+    // Notify all users in chat history
+    uniqueUserIds.forEach(async (connectedUserId) => {
+      const socketIds = await redis.smembers(`user:${connectedUserId}:sockets`);
+      socketIds.forEach((socketId) => {
+        io.to(socketId).emit('userStatusNotification', { userId, status, lastSeen });
+      });
+    });
+  }
+});
+
+
 const userInclude = Prisma.validator<Prisma.usersInclude>()({
   messages: true,
 });
@@ -30,6 +115,24 @@ io.use(socketAuthMiddleware);
 io.on('connection', async (socket: AuthenticatedSocket) => {
   try {
     // Retrieve user's chats and last message from each chat
+    await prisma.users.update({
+      where: {
+        id: socket.userId!
+      },
+      data: {
+        status: "online"
+      }
+    });
+
+    // Store userId -> socket.id in Redis
+    await redis.sadd(`user:${socket.userId}:sockets`, socket.id);
+
+    // Publish user online event
+    publisher.publish(
+      'userStatus',
+      JSON.stringify({ userId: socket.userId, status: 'online' })
+    );
+
     const userRooms = await getUserRoomsListWithLastMessage(socket.userId!);
     socket.emit('chats', userRooms);
 
@@ -85,7 +188,14 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
       const presignedAttachments = await generatePresignedUrls(attachments);
     
       const formattedData = { ...message, userName, attachments: presignedAttachments, tempId };
-    
+      const formattedDataNotification = {roomId, userName: formattedData.userName, userId: formattedData.userId, text: formattedData.text, isAttachment: formattedData.attachments.length !== 0, lastMessageTime: formattedData.createdAt};
+
+      // Publish the new message event
+      publisher.publish(
+        'newMessage',
+        JSON.stringify({ roomId, message: formattedDataNotification })
+      );
+
       const endTime = performance.now();
       console.log(`Execution time: ${endTime - startTime} ms (DB: ${middleTime - startTime} ms)`);
     
@@ -468,6 +578,31 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
       }
     });
     
+    // Handle disconnection
+    socket.on("disconnect", async () => {
+      try {
+        console.log(`User disconnected: ${socket.userId}, socketId: ${socket.id}`);
+        await redis.srem(`user:${socket.userId}:sockets`, socket.id);
+    
+        // Check if the user has any active connections left
+        const remainingSockets = await redis.scard(`user:${socket.userId}:sockets`);
+        const lastActive = new Date();
+        if (remainingSockets === 0) {
+          await prisma.users.update({
+            where: { id: socket.userId },
+            data: { status: "offline", lastActive: lastActive },
+          });
+        }
+
+        // Publish user offline event
+        publisher.publish(
+          'userStatus',
+          JSON.stringify({ userId: socket.userId, status: 'offline', lastSeen: lastActive })
+        );
+      } catch (error) {
+        console.error("Disconnection Error:", error);
+      }
+    });
 
   } catch (error) {
     console.error('Error:', error);

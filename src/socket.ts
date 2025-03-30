@@ -147,6 +147,7 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
     socket.on('enterChat', async (roomId: string) => {
       try {
           const { roomData, roomType, count, chatRoomId } = await getRoomData(socket.userId!, roomId);
+          console.log(roomData, roomType, count, chatRoomId);
           const messages = await getChatMessages(chatRoomId ?? roomId);
           const filteredMessages = await processMessages(messages);
   
@@ -308,32 +309,34 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
       }
     })
 
-    socket.on('deleteMessage', async (data) => {
+    socket.on('deleteMessage', async ({ messageId }) => {
       try {
-        const { messageId } = data;
+        if (!socket.userId) return socket.emit("error", { msg: "Unauthorized" });
 
-        if (!socket.userId) {
+        const message = await prisma.messages.findUnique({ where: {id: messageId} });
+        if (!message) return socket.emit("error", { msg: "Message not found" });
+
+        let roomId = message.chatRoomId || message.groupRoomId || message.channelRoomId;
+        if (!roomId) return;
+
+        if (message.groupRoomId) {
+          const { ownerId } = await prisma.groups.findUniqueOrThrow({ where: { id: message.groupRoomId } });
+          if (message.userId !== socket.userId && ownerId !== socket.userId) {
+            return socket.emit("error", { msg: "Unauthorized" });
+          }
+        }
+        if (message.channelRoomId) {
+          const { ownerId } = await prisma.channels.findUniqueOrThrow({ where: { id: message.channelRoomId } });
+          if (message.userId !== socket.userId && ownerId !== socket.userId) {
+            return socket.emit("error", { msg: "Unauthorized" });
+          }
+        }
+        if (!message.groupRoomId && !message.channelRoomId && message.userId !== socket.userId) {
           return socket.emit("error", { msg: "Unauthorized" });
         }
 
-        const message = await prisma.messages.findUnique({ where: {id: messageId} });
-        
-        if (!message) {
-          return socket.emit("error", { msg: "Message not found" });
-        }
-
-        if (message.chatRoomId) {
-          if (message.userId !== socket.userId) {
-            return socket.emit("error", { msg: "You can only delete your own messages" });
-          }
-
-          await prisma.messages.update({
-            where: { id: messageId },
-            data: { deletedAt: new Date() },
-          });
-
-          io.in(`${message.chatRoomId}`).emit('deleteMessage', messageId);
-        }
+        await prisma.messages.update({ where: { id: messageId }, data: { deletedAt: new Date() } });
+        io.in(roomId).emit('deleteMessage', messageId);
 
       } catch (error) {
         console.error("Error deleting message:", error);
@@ -355,26 +358,24 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
           return socket.emit("error", { msg: "Message not found" });
         }
 
-        if (message.chatRoomId) {
-          if (message.userId !== socket.userId) {
-            return socket.emit("error", { msg: "You can only edit your own messages" });
-          }
-
-          await prisma.messages.update({
-            where: { id: messageId },
-            data: { text: editedText, isEdited: true },
-          });
-
-          const FormattedMessage = {
-            id: message.id,
-            updatedAt: new Date(),
-            text: editedText,
-            isEdited: true
-          }
-
-          io.in(`${message.chatRoomId}`).emit('editMessage', FormattedMessage);
+        if (message.userId !== socket.userId) {
+          return socket.emit("error", { msg: "You can only edit your own messages" });
         }
 
+        await prisma.messages.update({
+          where: { id: messageId },
+          data: { text: editedText, isEdited: true },
+        });
+
+        const FormattedMessage = {
+          id: message.id,
+          updatedAt: new Date(),
+          text: editedText,
+          isEdited: true
+        }
+
+        io.in(`${message.chatRoomId || message.groupRoomId || message.channelRoomId}`).emit('editMessage', FormattedMessage);
+        
       } catch (error) {
         console.error("Error editing message:", error);
         socket.emit("deleteMessage", { success: false, error: error });
@@ -578,6 +579,21 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
       }
     });
     
+    socket.on("subscribe", async (roomId: string) => {
+      try {
+        const data = await prisma.usersRooms.create({
+          data: {
+            userId: socket.userId!,
+            channelRoomId: roomId,
+          }
+        })
+        socket.emit("subscribeChannel", {success: true})
+      } catch (error) {
+        console.error("Error subscribing new user:", error);
+        socket.emit("error", { success: false, message: "An error occurred" });
+      }
+    })
+
     // Handle disconnection
     socket.on("disconnect", async () => {
       try {

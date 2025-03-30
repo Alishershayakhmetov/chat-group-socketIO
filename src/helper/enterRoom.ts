@@ -8,7 +8,8 @@ interface attachment {
     key: string, 
     name: string, 
     isNamePersist: boolean, 
-    fileSize: number | null
+    fileSize: number | null,
+    fileBase64Blur: string,
 }
 
 export async function getRoomData(userId: string, roomId: string) {
@@ -17,7 +18,7 @@ export async function getRoomData(userId: string, roomId: string) {
         roomType = "savedMessages"
     }
     roomType = roomId.split("-")[0];
-    let roomData, count, chatRoomId;
+    let roomData: any, count, chatRoomId;
 
     if (roomType === 'chat') {
         roomData = await prisma.chats.findUniqueOrThrow({ where: { id: roomId } });
@@ -33,6 +34,14 @@ export async function getRoomData(userId: string, roomId: string) {
     else if (roomType === 'channel') {
         roomData = await prisma.channels.findUniqueOrThrow({ where: { id: roomId } });
         count = await prisma.usersRooms.count({ where: { channelRoomId: roomData.id } });
+
+        const isMember = await prisma.usersRooms.findFirst({
+            where: {
+                userId, channelRoomId: roomData.id
+            }
+        });
+
+        roomData["isMember"] = isMember === null ? false : true
     } 
     else if (roomType == "savedMessages") {
         
@@ -88,7 +97,7 @@ export async function processMessages(messages: any[]) {
     return Promise.all(
         messages.map(async ({ deletedAt, attachments, user, ...rest }) => {
             const signedAttachments = await Promise.all(
-                attachments.map(async ({ key, name, isNamePersist, fileSize, id } : attachment) => {
+                attachments.map(async ({ key, name, isNamePersist, fileSize, id, fileBase64Blur } : attachment) => {
 
                     let command = new GetObjectCommand({
                         Bucket: process.env.BUCKET_NAME1,
@@ -97,7 +106,7 @@ export async function processMessages(messages: any[]) {
                     });
 
                     const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
-                    return { id, fileURL: url, fileName: name, saveAsMedia: isNamePersist, fileSize: fileSize ? fileSize.toString() : null  };
+                    return { id, fileURL: url, fileName: name, saveAsMedia: isNamePersist, fileSize: fileSize ? fileSize.toString() : null, fileBase64Blur  };
                 })
             );
 
@@ -122,5 +131,6 @@ export function formatRoomData(roomData: any, roomType: string, roomId: string, 
         isActive: roomData.status,
         lastActiveTime: roomData.lastActive,
         numberOfMembers: count,
+        ...(roomType === "channel" ? { isMember: roomData.isMember ? true : false } : {}),
     };
 }

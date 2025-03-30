@@ -27,7 +27,7 @@ export async function saveMessage(userId: string, roomId: string, roomType: stri
   /**
    * Saves attachments related to a message.
    */
-export async function saveAttachments(messageId: string, attachments: { key: string; name: string; url: string; saveAsMedia: boolean; fileSize: number }[]) {
+export async function saveAttachments(messageId: string, attachments: { key: string; name: string; url: string; saveAsMedia: boolean; fileSize: number; fileBase64Blur: string }[]) {
     await prisma.attachments.createMany({
       data: attachments.map(att => ({
         fileUrl: att.url,
@@ -35,7 +35,8 @@ export async function saveAttachments(messageId: string, attachments: { key: str
         name: att.name,
         isNamePersist: att.saveAsMedia,
         messageId,
-        fileSize: att.fileSize
+        fileSize: att.fileSize,
+        fileBase64Blur: att.fileBase64Blur
       })),
     });
   }
@@ -53,7 +54,7 @@ export async function fetchUserName(userId: string) {
   /**
    * Generates presigned URLs for attachments.
    */
-export async function generatePresignedUrls(attachments: { key: string; name: string; saveAsMedia: boolean; fileSize: number }[]) {
+export async function generatePresignedUrls(attachments: { key: string; name: string; saveAsMedia: boolean; fileSize: number; fileBase64Blur: string }[]) {
     return Promise.all(
       attachments.map(async (attachment) => {
         try {
@@ -64,10 +65,10 @@ export async function generatePresignedUrls(attachments: { key: string; name: st
           });
   
           const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
-          return { saveAsMedia: attachment.saveAsMedia, fileURL: presignedUrl, fileName: attachment.name, fileSize: attachment.fileSize };
+          return { saveAsMedia: attachment.saveAsMedia, fileURL: presignedUrl, fileName: attachment.name, fileSize: attachment.fileSize, fileBase64Blur: attachment.fileBase64Blur };
         } catch (error) {
           console.error(`Error generating presigned URL for key: ${attachment.key}`, error);
-          return { saveAsMedia: attachment.saveAsMedia, fileURL: null, fileName: attachment.name, fileSize: attachment.fileSize };
+          return { saveAsMedia: attachment.saveAsMedia, fileURL: null, fileName: attachment.name, fileSize: attachment.fileSize, fileBase64Blur: attachment.fileBase64Blur };
         }
       })
     );

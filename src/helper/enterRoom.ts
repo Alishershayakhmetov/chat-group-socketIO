@@ -72,10 +72,10 @@ export async function getChatMessages(roomId: string) {
             ],
         },
         include: {
+            attachments: true,
             user: {
                 select: { id: true, name: true, imgURL: true },
             },
-            attachments: true,
 			originalMsg: {
 				select: {
 					text: true,
@@ -86,7 +86,17 @@ export async function getChatMessages(roomId: string) {
 						},
 					},
 				},
-			}
+			},
+            forwardedMsg: {
+                select : {
+                    user: {
+                        select: { id: true, name: true, imgURL: true },
+                    },
+                    chat: { select: { id: true } },
+                    group: { select: { id: true, name: true, imgURL: true } },
+                    channel: { select: { id: true, name: true, imgURL: true } },
+                }
+            }
         },
         orderBy: { createdAt: 'desc' },
         take: 50,
@@ -132,5 +142,6 @@ export function formatRoomData(roomData: any, roomType: string, roomId: string, 
         lastActiveTime: roomData.lastActive,
         numberOfMembers: count,
         ...(roomType === "channel" ? { isMember: roomData.isMember ? true : false } : {}),
+        ...((roomType === "channel" || roomType === "group") && { ownerId: roomData.ownerId })
     };
 }

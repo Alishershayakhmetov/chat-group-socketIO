@@ -135,6 +135,7 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
 
     const userRooms = await getUserRoomsListWithLastMessage(socket.userId!);
     socket.emit('chats', userRooms);
+    socket.emit("userId", socket.userId);
 
     socket.on('search', async (searchInput) => {
       const search = extractSearchQuery(searchInput);
@@ -150,9 +151,7 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
           console.log(roomData, roomType, count, chatRoomId);
           const messages = await getChatMessages(chatRoomId ?? roomId);
           const filteredMessages = await processMessages(messages);
-  
           const filteredRoomData = formatRoomData(roomData, roomType, roomId, chatRoomId, count);
-          
           socket.join(`${filteredRoomData?.id}`);
           socket.emit('enterChat', { roomData: filteredRoomData, messages: filteredMessages });
       } catch (error) {
@@ -416,19 +415,35 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
         if (!roomIds || !message) {
           return socket.emit("forwardMessages", { success: false, error: "Invalid data" });
         }
+
+        // Fetch metadata about the original message
+        const originalMessage = await prisma.messages.findUnique({
+          where: { id: message.id },
+          include: {
+            user: { select: { name: true } }, // Sender's name
+            chat: { select: { id: true } },
+            group: { select: { id: true, name: true } },
+            channel: { select: { id: true, name: true } },
+          },
+        });
+
+        if (!originalMessage) {
+          return socket.emit("forwardMessages", { success: false, error: "Original message not found" });
+        }
     
         // Create messages for each room
         const createdMessages = await Promise.all(
           roomIds.map(async (roomId: string) => {
             let messageData: any = {
               text: message.text,
-                userId: message.userId,
-                createdAt: new Date(),
-                attachments: {
-                  connect: message.attachments && message.attachments.map((attachment: any) => ({
-                    id: attachment.id,
-                  })),
-                },
+              userId: message.userId,
+              createdAt: new Date(),
+              attachments: {
+                connect: message.attachments && message.attachments.map((attachment: any) => ({
+                  id: attachment.id,
+                })),
+              },
+              forwardedMessageId: message.id, // Reference to original message
             };
     
             // Determine room type and set the right foreign key
@@ -445,7 +460,7 @@ io.on('connection', async (socket: AuthenticatedSocket) => {
             return prisma.messages.create({ data: messageData });
           })
         );
-    
+
         // Emit the new messages to all rooms
         roomIds.forEach((roomId: string, index: number) => {
           socket.to(roomId).emit("newMessage", createdMessages[index]);

@@ -127,9 +127,15 @@ model messages {
   deletedAt     DateTime? @map("deleted_at")
   isEdited      Boolean   @default(false) @map("is_edited")
 
+  // For Replies
   originalMsg       messages?  @relation("MessageRelation", fields: [originalMessageId], references: [id], map: "original_message_id")
   originalMessageId String?    @map("original_message_id")
   replies           messages[] @relation("MessageRelation")
+
+  // For Forwarded Messages
+  forwardedMessageId String?    @map("forwarded_message_id")
+  forwardedMsg       messages?  @relation("ForwardedMessageRelation", fields: [forwardedMessageId], references: [id], map: "forwarded_message_id")
+  forwards           messages[] @relation("ForwardedMessageRelation")
 
   // Relationships
   user        users         @relation(fields: [userId], references: [id])

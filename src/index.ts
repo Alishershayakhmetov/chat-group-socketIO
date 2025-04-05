@@ -1,6 +1,6 @@
 import express, {Request, Response} from "express";
 import { createServer } from "http";
-import socketServer from "./socket.js";
+import socketServer from "./socket/server.js";
 import cors from "cors";
 import { s3 } from "./S3Client.js";
 import { PutObjectCommand } from "@aws-sdk/client-s3";

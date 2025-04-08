@@ -215,4 +215,83 @@ export const setupMessageEvents = (socket: AuthenticatedSocket, publisher: Redis
 			socket.emit("forwardMessages", { success: false, error: error });
 		}
 	});
+
+	// Fetch older messages
+	socket.on("getOlderMessages", async ({ roomId, lastMessageId, lastMessageCreatedAt }) => {
+		console.log(roomId, lastMessageId, lastMessageCreatedAt);
+		try {
+			const olderMessages = await prisma.messages.findMany({
+				where: {
+					// First ensure we're only getting messages from this specific room
+					OR: [
+						{ chatRoomId: roomId },
+						{ groupRoomId: roomId },
+						{ channelRoomId: roomId }
+					],
+					// Then filter for messages older than our reference point
+					AND: [
+						{
+							OR: [
+								{
+									createdAt: { lt: lastMessageCreatedAt }
+								},
+								{
+									createdAt: lastMessageCreatedAt,
+									id: { lt: lastMessageId }
+								}
+							]
+						}
+					]
+				},
+				include: {
+					attachments: true,
+					user: {
+						select: { id: true, name: true, imgURL: true },
+					},
+					originalMsg: {
+						select: {
+							text: true,
+							user: {
+								select: {
+									name: true,
+									lastName: true
+								},
+							},
+						},
+					},
+					forwardedMsg: {
+						select : {
+							user: {
+								select: { id: true, name: true, imgURL: true },
+							},
+							chat: { select: { id: true } },
+							group: { select: { id: true, name: true, imgURL: true } },
+							channel: { select: { id: true, name: true, imgURL: true } },
+						}
+					}
+				},
+				orderBy: [
+					{ createdAt: 'desc' },
+					{ id: 'desc' },
+ 				],
+				take: 10,
+			});
+
+			// Convert BigInt to string before sending
+			const olderMessagesWithStringFileSize = olderMessages.map(message => ({
+				...message,
+				attachments: message.attachments.map((attachment) => ({
+					...attachment,
+					fileName: attachment.name,
+					fileURL: attachment.fileUrl,
+					fileSize: attachment.fileSize?.toString()
+				}))
+			}));
+
+			socket.emit("olderMessages", olderMessagesWithStringFileSize.reverse());
+		} catch (error) {
+			console.error("Error fetching older messages:", error);
+			socket.emit("olderMessages", []);
+		}
+	});
 };

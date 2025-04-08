@@ -15,18 +15,17 @@ export const setupChatEvents = (socket: AuthenticatedSocket, publisher: Redis) =
 
   socket.on('enterChat', async (roomId: string) => {
     try {
-        const { roomData, roomType, count, chatRoomId } = await getRoomData(socket.userId!, roomId);
-        console.log(roomData, roomType, count, chatRoomId);
-        const messages = await getChatMessages(chatRoomId ?? roomId);
-        const filteredMessages = await processMessages(messages);
-        const filteredRoomData = formatRoomData(roomData, roomType, roomId, chatRoomId, count);
-        socket.join(`${filteredRoomData?.id}`);
-        socket.emit('enterChat', { roomData: filteredRoomData, messages: filteredMessages });
+      const { roomData, roomType, count, chatRoomId } = await getRoomData(socket.userId!, roomId);
+      console.log(roomData, roomType, count, chatRoomId);
+      const messages = await getChatMessages(chatRoomId ?? roomId);
+      const filteredMessages = await processMessages(messages);
+      const filteredRoomData = formatRoomData(roomData, roomType, roomId, chatRoomId, count);
+      socket.join(`${filteredRoomData?.id}`);
+      socket.emit('enterChat', { roomData: filteredRoomData, messages: filteredMessages });
     } catch (error) {
-        console.error('Error in enterChat:', error);
-        socket.emit('error', 'Failed to load chat');
+      console.error('Error in enterChat:', error);
+      socket.emit('error', 'Failed to load chat');
     }
   });
   
-  // ... other chat-related events
 };

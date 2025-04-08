@@ -33,12 +33,46 @@ export const setupEventHandlers = (io: Server, publisher: Redis, redis: Redis) =
 			const userRooms = await getUserRoomsListWithLastMessage(socket.userId!);
 			socket.emit('chats', userRooms);
 			socket.emit("userId", socket.userId);
+			const userData = await prisma.users.findFirstOrThrow({
+				where: {
+					id: socket.userId
+				},
+				select: {
+					name: true,
+					lastName: true,
+					imgURL: true,
+				}
+			})
+			socket.emit("userData", userData);
 			
       // Setup all event handlers
       setupChatEvents(socket, publisher);
 			setupMessageEvents(socket, publisher, io);
       setupGroupEvents(socket, publisher);
       setupChannelEvents(socket, publisher);
+
+			socket.on("updateProfile", async ({name, lastName, uploadedImage}) => {
+				if (!name || !lastName && !uploadedImage) {
+					socket.emit("error", "you need to send all data");
+					return;
+				}
+				const updatedUserData = await prisma.users.update({
+					where: {
+						id: socket.userId!
+					}, 
+					data: {
+						name,
+						lastName,
+						imgURL: uploadedImage && uploadedImage.url
+					},
+					select: {
+						name: true,
+						lastName: true,
+						imgURL: true
+					}
+				})
+				socket.emit("userData", updatedUserData);
+			})
 
       // Handle disconnection
     	socket.on("disconnect", async () => {

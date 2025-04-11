@@ -44,11 +44,11 @@ export async function saveAttachments(messageId: string, attachments: { key: str
   /**
    * Fetches the username of a given user.
    */
-export async function fetchUserName(userId: string) {
+export async function fetchUserNameAndLastName(userId: string) {
     return prisma.users.findUnique({
       where: { id: userId },
-      select: { name: true },
-    }).then(user => user?.name);
+      select: { name: true, lastName: true },
+    }).then(user => user?.name + " " + user?.lastName);
   }
   
   /**

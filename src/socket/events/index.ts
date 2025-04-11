@@ -1,4 +1,4 @@
-import { Server, Socket } from "socket.io";
+import { Server } from "socket.io";
 import { Redis } from "ioredis";
 import { prisma } from "../../prismaClient.js";
 import { AuthenticatedSocket } from "../../interfaces/interfaces.js";
@@ -9,9 +9,9 @@ import { setupGroupEvents } from "./group.js";
 import { setupChannelEvents } from "./channel.js";
 
 export const setupEventHandlers = (io: Server, publisher: Redis, redis: Redis) => {
-  io.on('connection', async (socket: AuthenticatedSocket) => {
-    try {
-      // Retrieve user's chats and last message from each chat
+	io.on('connection', async (socket: AuthenticatedSocket) => {
+		try {
+			// Retrieve user's chats and last message from each chat
 			await prisma.users.update({
 				where: {
 					id: socket.userId!
@@ -44,12 +44,12 @@ export const setupEventHandlers = (io: Server, publisher: Redis, redis: Redis) =
 				}
 			})
 			socket.emit("userData", userData);
-			
-      // Setup all event handlers
-      setupChatEvents(socket, publisher);
+				
+			// Setup all event handlers
+			setupChatEvents(socket, publisher);
 			setupMessageEvents(socket, publisher, io);
-      setupGroupEvents(socket, publisher);
-      setupChannelEvents(socket, publisher);
+			setupGroupEvents(socket, publisher, io);
+			setupChannelEvents(socket, publisher);
 
 			socket.on("updateProfile", async ({name, lastName, uploadedImage}) => {
 				if (!name || !lastName && !uploadedImage) {
@@ -74,8 +74,8 @@ export const setupEventHandlers = (io: Server, publisher: Redis, redis: Redis) =
 				socket.emit("userData", updatedUserData);
 			})
 
-      // Handle disconnection
-    	socket.on("disconnect", async () => {
+			// Handle disconnection
+			socket.on("disconnect", async () => {
 				try {
 					console.log(`User disconnected: ${socket.userId}, socketId: ${socket.id}`);
 					await redis.srem(`user:${socket.userId}:sockets`, socket.id);
@@ -100,9 +100,9 @@ export const setupEventHandlers = (io: Server, publisher: Redis, redis: Redis) =
 				}
 			});
 
-    } catch (error) {
-      console.error('Error:', error);
-      socket.disconnect();
-    }
-  });
+		} catch (error) {
+			console.error('Error:', error);
+			socket.disconnect();
+		}
+	});
 };

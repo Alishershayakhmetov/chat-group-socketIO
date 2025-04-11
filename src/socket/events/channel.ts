@@ -44,4 +44,24 @@ export const setupChannelEvents = (socket: AuthenticatedSocket, publisher: Redis
 		}
 	})
 
+	socket.on("unsubscribeChannel", async ({ channelId }: { channelId: string }) => {
+		try {
+			await prisma.usersRooms.delete({
+				where: {
+					userId_channelRoomId: {
+						userId: socket.userId!,
+						channelRoomId: channelId
+					}
+				}
+			});
+			
+			socket.emit("userUnsubscribeChannel", { 
+				userId: socket.userId,
+				channelId
+			});
+		} catch (error) {
+			console.error("Error leaving group:", error);
+			socket.emit("leaveGroupError", { error: "Failed to leave group" });
+		}
+	});
 };

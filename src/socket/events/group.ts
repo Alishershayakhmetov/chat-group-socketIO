@@ -1,8 +1,9 @@
 import { Redis } from "ioredis";
 import { AuthenticatedSocket } from "../../interfaces/interfaces.js";
 import { prisma } from "../../prismaClient.js";
+import { Server } from "socket.io";
 
-export const setupGroupEvents = (socket: AuthenticatedSocket, publisher: Redis) => {
+export const setupGroupEvents = (socket: AuthenticatedSocket, publisher: Redis, io: Server) => {
 	socket.on('openCreateNewGroup', async () => {
 		try {
 			// Fetch the second person who has chatted with the current user
@@ -56,64 +57,65 @@ export const setupGroupEvents = (socket: AuthenticatedSocket, publisher: Redis) 
 	});
 
 	socket.on("getOnlyUserRooms", async ({ groupId }) => {
-      try {
-        if (!socket.userId) {
-          return socket.emit("error", { msg: "Unauthorized" });
-        }
+		try {
+			if (!socket.userId) {
+		  		return socket.emit("error", { msg: "Unauthorized" });
+			}
 
-        // Get userIds already in the group
-        const existingUsers = await prisma.usersRooms.findMany({
-          where: { groupRoomId: groupId },
-          select: { userId: true },
-        });
+			// Get userIds already in the group
+			const existingUsers = await prisma.usersRooms.findMany({
+			where: { groupRoomId: groupId },
+			select: { userId: true },
+			});
 
-        const existingUserIds = new Set(existingUsers.map(user => user.userId));
+			const existingUserIds = new Set(existingUsers.map(user => user.userId));
 
-        const userRooms = await prisma.usersRooms.findMany({
-          where: { userId: socket.userId },
-          orderBy: { lastMessageTime: 'desc' },
-          select: {
-            chatRoom: {
-              select: {
-                id: true,
-                userRooms: {
-                  where: { userId: { not: socket.userId, notIn: Array.from(existingUserIds) } }, // Exclude the current user
-                  select: {
-                    user: {
-                      select: {
-                        name: true,
-                        lastName: true,
-                        imgURL: true,
-                        id: true
-                      },
-                    },
-                  },
-                },
-              }
-            },
-          }
-        });
+			const userRooms = await prisma.usersRooms.findMany({
+			where: { userId: socket.userId },
+			orderBy: { lastMessageTime: 'desc' },
+			select: {
+				chatRoom: {
+				select: {
+					id: true,
+					userRooms: {
+					where: { userId: { not: socket.userId, notIn: Array.from(existingUserIds) } }, // Exclude the current user
+					select: {
+						user: {
+						select: {
+							name: true,
+							lastName: true,
+							imgURL: true,
+							id: true
+						},
+						},
+					},
+					},
+				}
+				},
+			}
+			});
 
-        console.log(userRooms);
+			console.log(userRooms);
 
-        const formattedData = userRooms
-          .map((roomData) => {
-            if (!roomData.chatRoom?.userRooms.length) return null;
-            return {
-              id: roomData.chatRoom.userRooms[0].user.id,
-              chatName: roomData.chatRoom.userRooms[0].user.name,
-              chatImageURL: roomData.chatRoom.userRooms[0].user.imgURL
-            };
-          })
-          .filter(Boolean); // Remove null or undefined values
+			const formattedData = userRooms
+			.map((roomData) => {
+				if (!roomData.chatRoom?.userRooms.length) return null;
+				return {
+				id: roomData.chatRoom.userRooms[0].user.id,
+				name: roomData.chatRoom.userRooms[0].user.name,
+				lastName: roomData.chatRoom.userRooms[0].user.lastName,
+				imgURL: roomData.chatRoom.userRooms[0].user.imgURL
+				};
+			})
+			.filter(Boolean); // Remove null or undefined values
 
-        socket.emit("getOnlyUserRooms", formattedData);
+			socket.emit("getOnlyUserRooms", formattedData);
 
-      } catch (error) {
-        console.error("Error getting rooms:", error);
-        socket.emit("deleteMessage", { success: false, error: error });
-      }
-    })
+		} catch (error) {
+			console.error("Error getting rooms:", error);
+			socket.emit("deleteMessage", { success: false, error: error });
+		}
+	})
 
 	socket.on('createNewGroup', async (data) => {
 		try {
@@ -140,66 +142,6 @@ export const setupGroupEvents = (socket: AuthenticatedSocket, publisher: Redis) 
 		} catch (error) {
 			console.error("Error creating group:", error);
 			socket.emit("groupCreated", { success: false, error: error });
-		}
-	})
-
-	socket.on("getOnlyUserRooms", async ({ groupId }) => {
-		try {
-			if (!socket.userId) {
-				return socket.emit("error", { msg: "Unauthorized" });
-			}
-
-			// Get userIds already in the group
-			const existingUsers = await prisma.usersRooms.findMany({
-				where: { groupRoomId: groupId },
-				select: { userId: true },
-			});
-
-			const existingUserIds = new Set(existingUsers.map(user => user.userId));
-
-			const userRooms = await prisma.usersRooms.findMany({
-				where: { userId: socket.userId },
-				orderBy: { lastMessageTime: 'desc' },
-				select: {
-					chatRoom: {
-						select: {
-							id: true,
-							userRooms: {
-								where: { userId: { not: socket.userId, notIn: Array.from(existingUserIds) } }, // Exclude the current user
-								select: {
-									user: {
-										select: {
-											name: true,
-											lastName: true,
-											imgURL: true,
-											id: true
-										},
-									},
-								},
-							},
-						}
-					},
-				}
-			});
-
-			console.log(userRooms);
-
-			const formattedData = userRooms
-				.map((roomData) => {
-					if (!roomData.chatRoom?.userRooms.length) return null;
-					return {
-						id: roomData.chatRoom.userRooms[0].user.id,
-						chatName: roomData.chatRoom.userRooms[0].user.name,
-						chatImageURL: roomData.chatRoom.userRooms[0].user.imgURL
-					};
-				})
-				.filter(Boolean); // Remove null or undefined values
-
-			socket.emit("getOnlyUserRooms", formattedData);
-
-		} catch (error) {
-			console.error("Error getting rooms:", error);
-			socket.emit("deleteMessage", { success: false, error: error });
 		}
 	})
 
@@ -234,6 +176,81 @@ export const setupGroupEvents = (socket: AuthenticatedSocket, publisher: Redis) 
 		} catch (error) {
 			console.error("Error adding users to group:", error);
 			socket.emit("addUserInGroup", { success: false, message: "An error occurred" });
+		}
+	});
+
+	socket.on("getOnlyUsersInGroup", async ({groupId}) => {
+		try {
+			const members = await prisma.usersRooms.findMany({
+				where: {
+					groupRoomId: groupId
+				},
+				select: {
+					userId: true
+				}
+			})
+
+			const userIds = members.filter(member => member.userId !== socket.userId).map(member => member.userId);
+	
+			const membersData = await prisma.users.findMany({
+				where: {
+					id: { in: userIds }
+				},
+				select: {
+					id: true,
+					name: true,
+					lastName: true,
+					imgURL: true
+				}
+			});
+			socket.emit("getOnlyUsersInGroup", membersData);
+		} catch (error) {
+			console.error("Error getting group members:", error);
+	  		socket.emit("error", "Failed to fetch group members");
+		}
+	});
+
+	socket.on("deleteMembersFromGroup", async ({groupId, membersIds} : {groupId: string, membersIds: string[]}) => {
+		try {
+			// verify the user has permission to delete members
+
+			// Delete the user-group relationships
+			await prisma.usersRooms.deleteMany({
+				where: {
+					groupRoomId: groupId,
+					userId: { in: membersIds }
+				}
+			});
+
+			// Notify all group members about the change
+			io.to(groupId).emit("deleteMembersFromGroup", { 
+				groupId, 
+				deletedMembers: membersIds
+			});
+		} catch (error) {
+			console.error("Error deleting members from group:", error);
+			socket.emit("error", "Failed to delete members from group");
+		}
+	});
+
+	socket.on("leaveGroup", async ({ groupId }: { groupId: string }) => {
+		try {
+			await prisma.usersRooms.delete({
+				where: {
+					userId_groupRoomId: {
+						userId: socket.userId!,
+						groupRoomId: groupId
+					}
+				}
+			});
+			
+			socket.to(groupId).emit("userLeftGroup", { 
+				userId: socket.userId,
+				groupId 
+			});
+		} catch (error) {
+			console.error("Error leaving group:", error);
+			socket.emit("leaveGroupError", { error: "Failed to leave group" });
 		}
 	});
 };

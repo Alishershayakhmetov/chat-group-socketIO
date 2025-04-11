@@ -1,7 +1,7 @@
 import { Redis } from "ioredis";
 import { createNewChat, getUserRoomsListWithLastMessage } from "../../helper/socketFunctions.js";
 import { AuthenticatedSocket } from "../../interfaces/interfaces.js";
-import { fetchUserName, generatePresignedUrls, saveAttachments, saveMessage } from "../../helper/sendMessage.js";
+import { fetchUserNameAndLastName, generatePresignedUrls, saveAttachments, saveMessage } from "../../helper/sendMessage.js";
 import { prisma } from "../../prismaClient.js";
 import { Server } from "socket.io";
 
@@ -30,7 +30,7 @@ export const setupMessageEvents = (socket: AuthenticatedSocket, publisher: Redis
 		if (attachments.length > 0) await saveAttachments(message.id, attachments);
 		const middleTime = performance.now();
 	
-		const userName = await fetchUserName(socket.userId!);
+		const userName = await fetchUserNameAndLastName(socket.userId!);
 		const presignedAttachments = await generatePresignedUrls(attachments);
 	
 		const formattedData = { ...message, userName, attachments: presignedAttachments, tempId };

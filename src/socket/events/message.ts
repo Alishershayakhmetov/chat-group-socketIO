@@ -1,7 +1,7 @@
 import { Redis } from "ioredis";
 import { createNewChat, getUserRoomsListWithLastMessage } from "../../helper/socketFunctions.js";
 import { AuthenticatedSocket } from "../../interfaces/interfaces.js";
-import { fetchUserNameAndLastName, generatePresignedUrls, saveAttachments, saveMessage } from "../../helper/sendMessage.js";
+import { fetchUserNameAndImgURL, generatePresignedUrls, saveAttachments, saveMessage } from "../../helper/sendMessage.js";
 import { prisma } from "../../prismaClient.js";
 import { Server } from "socket.io";
 
@@ -27,14 +27,14 @@ export const setupMessageEvents = (socket: AuthenticatedSocket, publisher: Redis
 			return;
 		}
 	
-		if (attachments.length > 0) await saveAttachments(message.id, attachments);
+		if (attachments && attachments.length > 0) await saveAttachments(message.id, attachments);
 		const middleTime = performance.now();
 	
-		const userName = await fetchUserNameAndLastName(socket.userId!);
+		const userdata = await fetchUserNameAndImgURL(socket.userId!);
 		const presignedAttachments = await generatePresignedUrls(attachments);
 	
-		const formattedData = { ...message, userName, attachments: presignedAttachments, tempId };
-		const formattedDataNotification = {roomId, userName: formattedData.userName, userId: formattedData.userId, text: formattedData.text, isAttachment: formattedData.attachments.length !== 0, lastMessageTime: formattedData.createdAt};
+		const formattedData = { ...message, userName: userdata?.name, imgURL: userdata?.imgURL, attachments: presignedAttachments, tempId };
+		const formattedDataNotification = {roomId, userName: formattedData.userName, userId: formattedData.userId, text: formattedData.text, isAttachment: formattedData.attachments?.length !== 0, lastMessageTime: formattedData.createdAt};
 
 		// Publish the new message event
 		publisher.publish(

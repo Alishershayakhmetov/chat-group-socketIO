@@ -7,6 +7,7 @@ import { setupChatEvents } from "./chat.js";
 import { setupMessageEvents } from "./message.js";
 import { setupGroupEvents } from "./group.js";
 import { setupChannelEvents } from "./channel.js";
+import { generateUploadURLs } from "../../helper/uploadURL.js";
 
 export const setupEventHandlers = (io: Server, publisher: Redis, redis: Redis) => {
 	io.on('connection', async (socket: AuthenticatedSocket) => {
@@ -50,6 +51,20 @@ export const setupEventHandlers = (io: Server, publisher: Redis, redis: Redis) =
 			setupMessageEvents(socket, publisher, io);
 			setupGroupEvents(socket, publisher, io);
 			setupChannelEvents(socket, publisher);
+
+			socket.on("upload", async (data, callback) => {
+				let {extensions} = data;
+				// Ensure extensions is always an array of strings
+				if (typeof extensions === 'string') {
+					extensions = [extensions];
+				} else if (!extensions.every((ext: any) => typeof ext === 'string')) {
+					socket.emit("error", { error: 'Invalid extensions format' })
+					return;
+				}
+
+				const urls = await generateUploadURLs(extensions);
+				callback({urls})
+			})
 
 			socket.on("updateProfile", async ({name, lastName, uploadedImage}) => {
 				if (!name || !lastName && !uploadedImage) {

@@ -40,21 +40,19 @@ export async function saveAttachments(messageId: string, attachments: { key: str
       })),
     });
   }
-  
-  /**
-   * Fetches the username of a given user.
-   */
-export async function fetchUserNameAndLastName(userId: string) {
+
+export async function fetchUserNameAndImgURL(userId: string) {
     return prisma.users.findUnique({
       where: { id: userId },
-      select: { name: true, lastName: true },
-    }).then(user => user?.name + " " + user?.lastName);
+      select: { name: true, imgURL: true },
+    })
   }
   
   /**
    * Generates presigned URLs for attachments.
    */
-export async function generatePresignedUrls(attachments: { key: string; name: string; saveAsMedia: boolean; fileSize: number; fileBase64Blur: string }[]) {
+export async function generatePresignedUrls(attachments: { key: string; name: string; saveAsMedia: boolean; fileSize: number; fileBase64Blur: string }[] | undefined) {
+  if (attachments)
     return Promise.all(
       attachments.map(async (attachment) => {
         try {

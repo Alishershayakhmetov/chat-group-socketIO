@@ -6,7 +6,8 @@
   "scripts": {
     "dev:node": "node --loader ts-node/esm src/index.ts",
     "dev": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 nodemon --loader ts-node/esm",
-    "start:nodemon": "node dist/index.js"
+    "start:nodemon": "node dist/index.js",
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",

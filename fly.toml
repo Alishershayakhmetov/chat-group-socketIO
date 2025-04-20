@@ -3,7 +3,8 @@ app = "chat-group-socketIO"
 primary_region = "iad"
 
 [build]
-  builder = "nodejs"
+  builder = "heroku/buildpacks:20"
+  buildpacks = ["heroku/nodejs"]
   build_command = "pnpm build:fly" 
 
 [http_service]
@@ -13,3 +14,4 @@ primary_region = "iad"
 
 [env]
   PORT = "3005"
+  NODE_VERSION = "18.x"

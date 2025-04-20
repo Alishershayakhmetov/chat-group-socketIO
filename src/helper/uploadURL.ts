@@ -3,6 +3,7 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from 'crypto';
 import { promisify } from "util";
+import config from "../config/index.js";
 
 const randomBytes = promisify(crypto.randomBytes);
 
@@ -14,7 +15,7 @@ export async function generateUploadURLs(extensions: string[]): Promise<{url: st
 		const fileName = rawBytes.toString('hex') + "." + extension;
 
 		const params = {
-			Bucket: process.env.BUCKET_NAME1,
+			Bucket: config.BUCKET_NAME,
 			Key: fileName,
 			Expires: 60,
 		};

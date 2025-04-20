@@ -2,6 +2,7 @@ import { prisma } from "../prismaClient.js";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3 } from "../S3Client.js";
+import config from "../config/index.js";
 
 interface attachment { 
 	id: string,
@@ -110,7 +111,7 @@ export async function processMessages(messages: any[]) {
 				attachments.map(async ({ key, name, isNamePersist, fileSize, id, fileBase64Blur } : attachment) => {
 
 					let command = new GetObjectCommand({
-						Bucket: process.env.BUCKET_NAME1,
+						Bucket: config.BUCKET_NAME,
 						Key: key,
 						...(isNamePersist && { ResponseContentDisposition: `attachment; filename=${name}` }),
 					});

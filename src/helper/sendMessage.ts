@@ -2,6 +2,7 @@ import { prisma } from "../prismaClient.js";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3 } from "../S3Client.js";
+import config from "../config/index.js";
   
   /**
    * Saves a message in the database.
@@ -57,7 +58,7 @@ export async function generatePresignedUrls(attachments: { key: string; name: st
       attachments.map(async (attachment) => {
         try {
           const command = new GetObjectCommand({
-            Bucket: process.env.BUCKET_NAME1,
+            Bucket: config.BUCKET_NAME,
             Key: attachment.key,
             ...(attachment.saveAsMedia && { ResponseContentDisposition: `attachment; filename=${attachment.name}` }),
           });

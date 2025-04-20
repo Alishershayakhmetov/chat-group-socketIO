@@ -9,8 +9,9 @@
     "start:nodemon": "shx cp .env.production .env && node dist/index.js",
     "build": "tsc",
 
-    "build:render": "pnpm install && pnpm prisma generate && pnpm build",
-    "start:render": "node dist/index.js"
+    "build:fly": "pnpm install && pnpm prisma generate && pnpm build",
+
+    "start": "node dist/index.js"
   },
   "keywords": [],
   "author": "",

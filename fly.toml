@@ -1,0 +1,15 @@
+# fly.toml
+app = "chat-group-socketIO"
+primary_region = "iad"
+
+[build]
+  builder = "nodejs"
+  build_command = "pnpm build:fly" 
+
+[http_service]
+  internal_port = 3005
+  force_https = true
+  auto_stop_machines = false
+
+[env]
+  PORT = "3005"

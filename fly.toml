@@ -3,6 +3,7 @@ app = "chat-group-socketIO"
 primary_region = "iad"
 
 [build]
+  dockerfile = "Dockerfile"
   builder = "heroku/buildpacks:20"
   buildpacks = ["heroku/nodejs"]
   build_command = "pnpm build:fly" 
